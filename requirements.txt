@@ -1,0 +1,6 @@
+flask
+gunicorn
+python-dotenv
+google-api-python-client
+google-cloud-bigquery
+isodate

@@ -1,5 +1,17 @@
-.venv/
+# Secrets
 .env
-*.json
+env.yaml
+
+# Python
+.venv/
 __pycache__/
+*.pyc
+
+# MacOS
+.DS_Store
+
+# Logs
+pipeline.log
+
+# Notebooks checkpoints
 .ipynb_checkpoints/
