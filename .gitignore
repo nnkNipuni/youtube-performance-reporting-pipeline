@@ -15,3 +15,5 @@ pipeline.log
 
 # Notebooks checkpoints
 .ipynb_checkpoints/
+youtube-daily-pipeline-ba7b1a50ef2c.json
+.env

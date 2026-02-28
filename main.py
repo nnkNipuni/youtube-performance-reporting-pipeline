@@ -15,4 +15,14 @@ def run():
         "returncode": p.returncode,
         "stdout": p.stdout[-4000:],
         "stderr": p.stderr[-4000:],
+    }), (200 if p.returncode == 0 else 500) 
+
+@app.route("/refresh", methods=["POST"])
+def refresh():
+    p = subprocess.run(["python", "refresh_stats.py"], capture_output=True, text=True)
+    return jsonify({
+        "ok": p.returncode == 0,
+        "returncode": p.returncode,
+        "stdout": p.stdout[-4000:],
+        "stderr": p.stderr[-4000:],
     }), (200 if p.returncode == 0 else 500)
