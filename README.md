@@ -43,7 +43,6 @@ The pipeline is fully automated using **Google Cloud Run** and **Cloud Scheduler
 
 ---
 
-## 📂 Project Structure
 youtube_pipeline/
 │
 ├── notebooks/
@@ -62,7 +61,6 @@ youtube_pipeline/
 ├── .gitignore                       # Git ignore rules
 │
 └── README.md
-
 
 ---
 
