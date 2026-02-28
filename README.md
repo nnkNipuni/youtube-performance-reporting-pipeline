@@ -18,13 +18,10 @@ The pipeline is fully automated using **Google Cloud Run** and **Cloud Scheduler
 
 **High-level flow:**
 
-YouTube Data API
-        ↓
-Cloud Run (Python – Flask)
-        ↓
-BigQuery (Analytics Tables)
-        ↓
-Looker Studio Dashboard
+- YouTube Data API  
+- Cloud Run (Python services)  
+- BigQuery (analytics storage)  
+- Looker Studio (dashboard)
 
 
 **Automation:**
@@ -65,3 +62,47 @@ youtube_pipeline/
 ├── .gitignore                       # Git ignore rules
 │
 └── README.md
+
+
+---
+
+## 🔁 Pipelines Explained
+
+### 1️⃣ Backfill Pipeline (`backfill.py`)
+- Fetches **all historical videos** from configured channels
+- Inserts only missing videos (deduplicated by `video_id`)
+- Used for:
+  - Initial setup
+  - Data recovery if the table is deleted
+- **Not scheduled** (manual execution only)
+
+---
+
+### 2️⃣ Daily Ingestion Pipeline (`build_pipeline.py`)
+- Fetches videos uploaded in the **last 24 hours**
+- Stores daily snapshot rows in BigQuery
+- Triggered automatically via Cloud Scheduler
+- Ensures continuous ingestion of new content
+
+---
+
+### 3️⃣ Metrics Refresh Pipeline (`refresh_stats.py`)
+- Fetches **latest views, likes, and comments** for existing videos
+- Updates engagement metrics for videos published in the last 28 days
+- Appends refreshed snapshots to BigQuery
+- Ensures the dashboard always shows **latest performance**
+
+---
+
+## ☁️ Cloud Run Endpoints
+
+| Endpoint | Purpose |
+|--------|--------|
+| `/` | Health check |
+| `/run` | Trigger daily ingestion pipeline |
+| `/refresh` | Trigger metrics refresh pipeline |
+
+**Manual trigger (optional):**
+```bash
+curl -X POST https://<cloud-run-url>/run
+curl -X POST https://<cloud-run-url>/refresh
