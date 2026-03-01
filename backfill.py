@@ -24,6 +24,7 @@ from google.cloud import bigquery
 import isodate
 import os
 from datetime import datetime, timezone
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 load_dotenv(override=True)
 
@@ -45,34 +46,38 @@ except Exception as e:
     existing_video_ids = set()
 
 # --- Helper functions ---
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_channel_info(channel_id):
-    resp = youtube.channels().list(part="snippet", id=channel_id).execute()
+    resp = youtube.channels().list(part="snippet,contentDetails", id=channel_id).execute()
     item = resp["items"][0]
-    return item["snippet"]["title"]
+    return {
+        "title": item["snippet"]["title"],
+        "uploads_playlist_id": item["contentDetails"]["relatedPlaylists"]["uploads"]
+    }
 
-def search_all_videos(channel_id):
-    """Fetch ALL video IDs from a channel with no date filter."""
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10))
+def get_all_uploaded_videos(uploads_playlist_id):
+    """Fetch ALL video IDs from a channel's Uploads playlist."""
     video_ids = []
     next_page_token = None
     page = 0
     while True:
         page += 1
-        print(f"    Searching page {page}... (collected {len(video_ids)} videos so far)", flush=True)
-        resp = youtube.search().list(
-            part="id",
-            channelId=channel_id,
-            type="video",
+        print(f"    Fetching uploads page {page}... (collected {len(video_ids)} videos so far)", flush=True)
+        resp = youtube.playlistItems().list(
+            part="contentDetails",
+            playlistId=uploads_playlist_id,
             maxResults=50,
-            pageToken=next_page_token,
-            order="date"
+            pageToken=next_page_token
         ).execute()
         for item in resp["items"]:
-            video_ids.append(item["id"]["videoId"])
+            video_ids.append(item["contentDetails"]["videoId"])
         next_page_token = resp.get("nextPageToken")
         if not next_page_token:
             break
     return video_ids
 
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_playlist_map(channel_id):
     """Build a map of video_id -> (playlist_id, playlist_name)."""
     print(f"  Fetching playlists...", flush=True)
@@ -121,6 +126,7 @@ def get_playlist_map(channel_id):
     print(f"  Mapped {len(video_to_playlist)} videos to playlists.", flush=True)
     return video_to_playlist
 
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_video_details(video_ids, channel_name, channel_id, playlist_map):
     rows = []
     for i in range(0, len(video_ids), 50):
@@ -156,15 +162,17 @@ def get_video_details(video_ids, channel_name, channel_id, playlist_map):
 all_rows = []
 for channel_id in CHANNEL_IDS:
     print(f"\nProcessing channel: {channel_id}", flush=True)
-    channel_name = get_channel_info(channel_id)
+    channel_info = get_channel_info(channel_id)
+    channel_name = channel_info["title"]
+    uploads_playlist_id = channel_info["uploads_playlist_id"]
     print(f"  Channel name: {channel_name}", flush=True)
 
     # Fetch playlist map for this channel
     playlist_map = get_playlist_map(channel_id)
 
-    # Fetch ALL video IDs (no date filter)
-    print(f"  Searching for ALL videos in channel history...", flush=True)
-    video_ids = search_all_videos(channel_id)
+    # Fetch ALL video IDs (no date filter) from the uploads playlist
+    print(f"  Searching for ALL uploaded videos in channel history...", flush=True)
+    video_ids = get_all_uploaded_videos(uploads_playlist_id)
     print(f"  Found {len(video_ids)} total videos in channel", flush=True)
 
     # Step 3: Filter out videos already in database

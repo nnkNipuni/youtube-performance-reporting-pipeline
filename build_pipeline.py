@@ -6,6 +6,7 @@ from google.cloud import bigquery
 import isodate
 import os
 from datetime import datetime, timezone, timedelta
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 load_dotenv(override=True)
 
@@ -16,17 +17,33 @@ TABLE = f"{os.getenv('BQ_PROJECT')}.{os.getenv('BQ_DATASET')}.{os.getenv('BQ_TAB
 CHANNEL_IDS = [c.strip() for c in os.getenv("CHANNEL_IDS", "").split(",")]
 now_utc = datetime.now(timezone.utc)
 
-# Daily pipeline fetches only last 24 hours of new videos
-# If you need to backfill historical data, run backfill.py instead
-cutoff_24h = now_utc - timedelta(hours=24)
-published_after = cutoff_24h.strftime("%Y-%m-%dT%H:%M:%SZ")
-
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_channel_info(channel_id):
     resp = youtube.channels().list(part="snippet", id=channel_id).execute()
     item = resp["items"][0]
     return item["snippet"]["title"]
 
-def search_videos(channel_id):
+def get_last_published_at(channel_id):
+    """Get the true last successful sync timestamp for a channel from BigQuery."""
+    query = f"""
+    SELECT MAX(published_at) as max_pub
+    FROM `{TABLE}`
+    WHERE channel_id = '{channel_id}'
+    """
+    try:
+        results = list(bq.query(query).result())
+        if results and results[0].max_pub:
+            # BigQuery returns a string here for our schema
+            return results[0].max_pub
+    except Exception as e:
+        print(f"    Failed to query max_pub (might be empty table): {e}")
+
+    # Fallback to 24h if new channel or error
+    cutoff = now_utc - timedelta(hours=24)
+    return cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10))
+def search_videos(channel_id, published_after):
     video_ids = []
     next_page_token = None
     page = 0
@@ -49,7 +66,8 @@ def search_videos(channel_id):
             break
     return video_ids
 
-def get_playlist_map(channel_id):
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10))
+def get_playlist_map(channel_id, cutoff_time):
     print(f"  Fetching playlists...", flush=True)
     video_to_playlist = {}
     next_page_token = None
@@ -73,7 +91,6 @@ def get_playlist_map(channel_id):
 
     print(f"  Found {len(playlists)} playlists. Mapping videos...", flush=True)
 
-    cutoff = now_utc - timedelta(hours=24)
     for pl in playlists:
         next_page_token = None
         while True:
@@ -88,7 +105,7 @@ def get_playlist_map(channel_id):
                 published_at = item["contentDetails"].get("videoPublishedAt")
                 if published_at:
                     publish_time = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-                    if publish_time >= cutoff and vid not in video_to_playlist:
+                    if publish_time >= cutoff_time and vid not in video_to_playlist:
                         video_to_playlist[vid] = {
                             "playlist_id": pl["playlist_id"],
                             "playlist_name": pl["playlist_name"]
@@ -100,6 +117,7 @@ def get_playlist_map(channel_id):
     print(f"  Mapped {len(video_to_playlist)} videos to playlists.", flush=True)
     return video_to_playlist
 
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_video_details(video_ids, channel_name, channel_id, playlist_map):
     rows = []
     for i in range(0, len(video_ids), 50):
@@ -133,19 +151,24 @@ def get_video_details(video_ids, channel_name, channel_id, playlist_map):
 
 all_rows = []
 for channel_id in CHANNEL_IDS:
-    print(f"Processing channel: {channel_id}", flush=True)
+    print(f"\nProcessing channel: {channel_id}", flush=True)
     channel_name = get_channel_info(channel_id)
     print(f"  Channel name: {channel_name}", flush=True)
-    playlist_map = get_playlist_map(channel_id)
-    print(f"  Searching for videos published after {published_after}...", flush=True)
-    video_ids = search_videos(channel_id)
-    print(f"  Found {len(video_ids)} videos in last 24 hours", flush=True)
-    print(f"  Fetching video details...", flush=True)
-    rows = get_video_details(video_ids, channel_name, channel_id, playlist_map)
-    all_rows.extend(rows)
 
+    published_after_str = get_last_published_at(channel_id)
+    published_after_dt = datetime.fromisoformat(published_after_str.replace("Z", "+00:00"))
+    print(f"  Searching for videos published strictly after: {published_after_str}...", flush=True)
 
-print(f"Total rows to insert: {len(all_rows)}", flush=True)
+    playlist_map = get_playlist_map(channel_id, published_after_dt)
+    video_ids = search_videos(channel_id, published_after_str)
+    
+    print(f"  Found {len(video_ids)} new videos.", flush=True)
+    if video_ids:
+        print(f"  Fetching video details...", flush=True)
+        rows = get_video_details(video_ids, channel_name, channel_id, playlist_map)
+        all_rows.extend(rows)
+
+print(f"\nTotal rows to insert: {len(all_rows)}", flush=True)
 
 if all_rows:
     from google.cloud import bigquery

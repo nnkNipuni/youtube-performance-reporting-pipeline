@@ -4,3 +4,4 @@ python-dotenv>=1.0
 google-api-python-client>=2.100
 google-cloud-bigquery>=3.10
 isodate>=0.6
+tenacity>=8.0.0
