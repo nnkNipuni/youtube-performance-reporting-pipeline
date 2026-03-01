@@ -146,4 +146,80 @@ python backfill.py
 python build_pipeline.py
 python refresh_stats.py
 ```
+## ☁️ Cloud Deployment & Automation (GCP)
 
+This project is automated using **Cloud Run** + **Cloud Scheduler**.
+
+####1️⃣ Prerequisites
+- A GCP project with billing enabled
+- Enabled APIs:
+  - Cloud Run API
+  - Cloud Build API
+  - Artifact Registry API
+  - Cloud Scheduler API
+  - BigQuery API
+
+####2️⃣ Authenticate and set project
+```bash
+gcloud auth login
+gcloud config set project <YOUR_PROJECT_ID>
+gcloud config set run/region asia-south1
+```
+####3️⃣ Deploy to Cloud Run (from source)
+
+Deploy the Flask app (main.py) which exposes /run and /refresh endpoints.
+```
+gcloud run deploy youtube-daily-pipeline \
+  --source . \
+  --region asia-south1 \
+  --allow-unauthenticated
+```
+After deployment, note the Service URL
+
+####4️⃣ Configure environment variables on Cloud Run
+Create an env.yaml file (not committed to GitHub):
+```
+CHANNEL_IDS: "channel_id_1,channel_id_2"
+BQ_PROJECT: "<YOUR_PROJECT_ID>"
+BQ_DATASET: "youtube_analytics"
+BQ_TABLE: "video_daily_metrics"
+YOUTUBE_API_KEY: "<YOUR_YOUTUBE_API_KEY>"
+```
+Apply it:
+```
+gcloud run services update youtube-daily-pipeline \
+  --region asia-south1 \
+  --env-vars-file env.yaml
+```
+####5️⃣ Create Cloud Scheduler jobs (Automation)
+
+Daily ingestion (new videos - last 24h)
+```
+gcloud scheduler jobs create http youtube-daily-trigger \
+  --location=asia-south1 \
+  --schedule="0 1 * * *" \
+  --uri="https://<CLOUD_RUN_URL>/run" \
+  --http-method=POST \
+  --time-zone="UTC"
+```
+Daily ingestion (new videos - last 24h)
+```
+gcloud scheduler jobs create http youtube-daily-trigger \
+  --location=asia-south1 \
+  --schedule="0 1 * * *" \
+  --uri="https://<CLOUD_RUN_URL>/run" \
+  --http-method=POST \
+  --time-zone="UTC"
+```
+#### 6️⃣ Verify automation
+
+Check Scheduler jobs:
+```
+gcloud scheduler jobs list --location=asia-south1
+```
+Manually trigger a run (optional):
+```
+curl -X POST "https://<CLOUD_RUN_URL>/run"
+curl -X POST "https://<CLOUD_RUN_URL>/refresh"
+```
+Note: Schedules are in UTC. Sri Lanka time is UTC+5:30.
