@@ -150,7 +150,7 @@ python refresh_stats.py
 
 This project is automated using **Cloud Run** + **Cloud Scheduler**.
 
-####1️⃣ Prerequisites
+### 1️⃣ Prerequisites
 - A GCP project with billing enabled
 - Enabled APIs:
   - Cloud Run API
@@ -159,13 +159,13 @@ This project is automated using **Cloud Run** + **Cloud Scheduler**.
   - Cloud Scheduler API
   - BigQuery API
 
-####2️⃣ Authenticate and set project
+### 2️⃣ Authenticate and set project
 ```bash
 gcloud auth login
 gcloud config set project <YOUR_PROJECT_ID>
 gcloud config set run/region asia-south1
 ```
-####3️⃣ Deploy to Cloud Run (from source)
+### 3️⃣ Deploy to Cloud Run (from source)
 
 Deploy the Flask app (main.py) which exposes /run and /refresh endpoints.
 ```
@@ -176,7 +176,7 @@ gcloud run deploy youtube-daily-pipeline \
 ```
 After deployment, note the Service URL
 
-####4️⃣ Configure environment variables on Cloud Run
+### 4️⃣ Configure environment variables on Cloud Run
 Create an env.yaml file (not committed to GitHub):
 ```
 CHANNEL_IDS: "channel_id_1,channel_id_2"
@@ -191,7 +191,7 @@ gcloud run services update youtube-daily-pipeline \
   --region asia-south1 \
   --env-vars-file env.yaml
 ```
-####5️⃣ Create Cloud Scheduler jobs (Automation)
+### 5️⃣ Create Cloud Scheduler jobs (Automation)
 
 Daily ingestion (new videos - last 24h)
 ```
@@ -211,7 +211,7 @@ gcloud scheduler jobs create http youtube-daily-trigger \
   --http-method=POST \
   --time-zone="UTC"
 ```
-#### 6️⃣ Verify automation
+### 6️⃣ Verify automation
 
 Check Scheduler jobs:
 ```
