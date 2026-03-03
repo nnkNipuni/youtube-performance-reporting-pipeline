@@ -63,7 +63,7 @@ youtube_pipeline/
 ├── Dockerfile                       # Container definition for Cloud Run
 ├── requirements.txt                 # Python dependencies
 │
-├── env.yaml                         # Environment variables for Cloud Run
+├── env.yaml                         # Environment variables for Cloud Run (gitignored)
 ├── .env                             # Local environment variables (gitignored)
 ├── .gitignore                       # Git ignore rules
 │
